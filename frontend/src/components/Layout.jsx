@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: '▦', end: true },
   { to: '/upload', label: 'Datasets', icon: '▤' },
+  { to: '/dataset-insights', label: 'Dataset Insights', icon: '▥' },
   { to: '/experiments/new', label: 'New experiment', icon: '⚗' },
   { to: '/history', label: 'Experiments', icon: '◷' },
 ]
@@ -32,7 +33,7 @@ export default function Layout() {
     try { await logout(); navigate('/login', { replace: true }) }
     catch { window.alert('Could not reach the server to end your session. Please try again.') }
   }
-  const title = location.pathname.startsWith('/upload') ? 'Datasets' : location.pathname.startsWith('/experiments/new') ? 'New experiment' : location.pathname.startsWith('/history') ? 'Experiments' : location.pathname.startsWith('/experiments/') ? 'Experiment results' : 'Dashboard'
+  const title = location.pathname.startsWith('/upload') ? 'Datasets' : location.pathname.startsWith('/dataset-insights') || location.pathname.startsWith('/datasets/') ? 'Dataset Insights' : location.pathname.startsWith('/experiments/new') ? 'New experiment' : location.pathname.startsWith('/history') ? 'Experiments' : location.pathname.startsWith('/experiments/') ? 'Experiment results' : 'Dashboard'
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -43,7 +44,7 @@ export default function Layout() {
         <div className="nav-caption">WORKSPACE</div>
         <nav className="nav">
           {NAV_ITEMS.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end}>
+            <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => (isActive || (item.to === '/dataset-insights' && location.pathname.startsWith('/datasets/'))) ? 'active' : undefined}>
               <span className="nav-icon">{item.icon}</span><span>{item.label}</span>
               {item.to === '/history' && <span className="nav-arrow">↗</span>}
             </NavLink>

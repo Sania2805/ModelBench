@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import FileDropzone from '../components/FileDropzone'
-import DatasetProfileView from '../components/DatasetProfileView'
 import { ErrorMessage, Notice, PageHeader } from '../components/common'
-import { getErrorMessage, regenerateDatasetInsights, uploadDataset } from '../services/api'
+import { getErrorMessage, uploadDataset } from '../services/api'
 import { formatBytes } from '../utils/format'
 
 const MAX_SIZE_MB = 10
@@ -14,7 +13,6 @@ export default function UploadPage() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const [profile, setProfile] = useState(null)
-  const [regenerating, setRegenerating] = useState(false)
 
   const handleFile = async (selected) => {
     setError(null)
@@ -42,20 +40,6 @@ export default function UploadPage() {
       setError(getErrorMessage(err))
     } finally {
       setUploading(false)
-    }
-  }
-
-  const handleRegenerate = async () => {
-    if (!profile?.dataset?.id) return
-    setRegenerating(true)
-    setError(null)
-    try {
-      const snapshot = await regenerateDatasetInsights(profile.dataset.id)
-      setProfile((current) => ({ ...current, ...snapshot.profile, insight_id: snapshot.id, insight_version: snapshot.version, insights_generated_at: snapshot.generated_at }))
-    } catch (err) {
-      setError(getErrorMessage(err))
-    } finally {
-      setRegenerating(false)
     }
   }
 
@@ -101,7 +85,7 @@ export default function UploadPage() {
           <Notice type="success">
             <div className="spread">
               <span>
-                <strong>{profile.dataset.original_filename}</strong> was uploaded and validated.
+                <strong>{profile.dataset.original_filename}</strong> was uploaded, validated, and its first insights were saved automatically.
               </span>
               <div className="row" style={{ flexWrap: 'wrap' }}>
                 <Link className="btn btn-secondary btn-sm" to={`/datasets/${profile.dataset.id}`}>View saved analysis</Link>
@@ -111,7 +95,7 @@ export default function UploadPage() {
               </div>
             </div>
           </Notice>
-          <DatasetProfileView profile={profile} onRegenerate={handleRegenerate} regenerating={regenerating} />
+
         </>
       )}
 

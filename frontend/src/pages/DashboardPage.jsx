@@ -6,7 +6,7 @@ import { EmptyState, ErrorMessage, LoadingState, StatusBadge } from '../componen
 import { METRIC_LABELS, formatDateTime, formatMetric, formatTask, shortModelName } from '../utils/format'
 
 async function loadDashboard() {
-  const [datasets, experiments] = await Promise.all([listDatasets(6), listExperiments(1, 5)])
+  const [datasets, experiments] = await Promise.all([listDatasets(4), listExperiments(1, 5)])
   return { datasetCount: datasets.total, datasets: datasets.items, experimentCount: experiments.total, recent: experiments.items }
 }
 
@@ -44,12 +44,12 @@ export default function DashboardPage() {
         </div>
 
         <section className="card recent-card" style={{ marginBottom: 22 }}>
-          <div className="card-header"><div><span className="eyebrow">DATA LIBRARY</span><h2>Recently uploaded datasets</h2><p>Open a dataset to revisit its saved insights and analysis history.</p></div><Link className="text-link" to="/upload">Upload dataset ↗</Link></div>
-          {data.datasets.length === 0 ? <p className="muted">No datasets uploaded yet.</p> : (
+          <div className="card-header"><div><span className="eyebrow">SAVED ANALYSIS</span><h2>Recent dataset insights</h2><p>Your latest saved dataset profiles. Open Dataset Insights to browse the full library.</p></div><Link className="text-link" to="/dataset-insights">View all insights ↗</Link></div>
+          {data.datasets.length === 0 ? <EmptyState title="No dataset insights yet" description="Upload a CSV dataset to automatically generate and save its first analysis." action={<Link className="btn btn-primary" to="/upload">Upload dataset</Link>} /> : (
             <div className="dataset-library-list">
-              {data.datasets.map((dataset) => <div className="dataset-library-item" key={dataset.id}>
+              {data.datasets.slice(0, 4).map((dataset) => <div className="dataset-library-item" key={dataset.id}>
                 <div className="dataset-library-icon">▤</div>
-                <div className="dataset-library-copy"><strong>{dataset.original_filename}</strong><small>{dataset.row_count.toLocaleString()} rows · {dataset.column_count} columns · {new Date(dataset.uploaded_at).toLocaleDateString()}</small></div>
+                <div className="dataset-library-copy"><strong>{dataset.original_filename}</strong><small>{dataset.row_count.toLocaleString()} rows · {dataset.column_count} columns · Uploaded {new Date(dataset.uploaded_at).toLocaleDateString()}</small></div>
                 <Link className="btn btn-outline btn-sm" to={`/datasets/${dataset.id}`}>View insights ↗</Link>
               </div>)}
             </div>
