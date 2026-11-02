@@ -127,10 +127,24 @@ function CategoricalStatsTable({ stats }) {
   )
 }
 
-export default function DatasetProfileView({ profile }) {
+export default function DatasetProfileView({ profile, onRegenerate, regenerating = false }) {
   const { dataset } = profile
   return (
     <div className="stack" style={{ gap: 20 }}>
+      <div className="spread" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <span className="eyebrow">SAVED DATA PROFILE</span>
+          <p className="muted small" style={{ margin: '4px 0 0' }}>
+            {profile.insight_version ? `Analysis version ${profile.insight_version}` : 'Analysis preview'}
+            {profile.insights_generated_at ? ` · ${new Date(profile.insights_generated_at).toLocaleString()}` : ''}
+          </p>
+        </div>
+        {onRegenerate && (
+          <button className="btn btn-secondary" type="button" onClick={onRegenerate} disabled={regenerating}>
+            {regenerating ? 'Regenerating…' : '↻ Regenerate & save'}
+          </button>
+        )}
+      </div>
       <div className="grid grid-4">
         <StatCard label="Rows" value={dataset.row_count.toLocaleString()} hint={formatBytes(dataset.file_size_bytes)} />
         <StatCard
@@ -170,6 +184,31 @@ export default function DatasetProfileView({ profile }) {
           <CategoricalStatsTable stats={profile.categorical_statistics} />
         </section>
       </div>
+
+      <div className="grid grid-2">
+        <section className="card">
+          <div className="card-header"><h2>Missing values analysis</h2><p>Missing cells by column</p></div>
+          {Object.keys(profile.missing_by_column || {}).length === 0 ? <p className="muted">No missing-value data available.</p> : (
+            <div className="table-wrap"><table className="table"><thead><tr><th>Column</th><th className="num">Missing</th><th className="num">Missing %</th></tr></thead><tbody>
+              {Object.entries(profile.missing_by_column).map(([name, item]) => <tr key={name}><td><strong>{name}</strong></td><td className="num">{item.missing_count}</td><td className="num">{Number(item.missing_percent).toFixed(1)}%</td></tr>)}
+            </tbody></table></div>
+          )}
+        </section>
+        <section className="card">
+          <div className="card-header"><h2>Automated recommendations</h2><p>Data-quality checks to review before training</p></div>
+          {profile.recommendations?.length ? <ul className="recommendation-list">{profile.recommendations.map((item, i) => <li key={i}>{item}</li>)}</ul> : <p className="muted">No recommendations were generated.</p>}
+        </section>
+      </div>
+
+      <section className="card">
+        <div className="card-header"><h2>Correlation analysis</h2><p>Pearson correlation between numeric columns. Correlation does not imply causation.</p></div>
+        {Object.keys(profile.correlation_matrix || {}).length < 2 ? <p className="muted">At least two numeric columns are needed for correlation analysis.</p> : (
+          <div className="table-wrap"><table className="table"><thead><tr><th>Column</th>{Object.keys(profile.correlation_matrix).map((name) => <th key={name} className="num">{name}</th>)}</tr></thead><tbody>
+            {Object.entries(profile.correlation_matrix).map(([rowName, values]) => <tr key={rowName}><td><strong>{rowName}</strong></td>{Object.keys(profile.correlation_matrix).map((colName) => <td key={colName} className="num">{values[colName] == null ? '—' : Number(values[colName]).toFixed(3)}</td>)}</tr>)}
+          </tbody></table></div>
+        )}
+        {profile.correlation_columns_analyzed > 0 && <p className="muted small" style={{ marginTop: 10 }}>Analyzed {profile.correlation_columns_analyzed} numeric columns.</p>}
+      </section>
     </div>
   )
 }

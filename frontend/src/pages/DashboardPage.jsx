@@ -6,8 +6,8 @@ import { EmptyState, ErrorMessage, LoadingState, StatusBadge } from '../componen
 import { METRIC_LABELS, formatDateTime, formatMetric, formatTask, shortModelName } from '../utils/format'
 
 async function loadDashboard() {
-  const [datasets, experiments] = await Promise.all([listDatasets(1), listExperiments(1, 5)])
-  return { datasetCount: datasets.total, experimentCount: experiments.total, recent: experiments.items }
+  const [datasets, experiments] = await Promise.all([listDatasets(6), listExperiments(1, 5)])
+  return { datasetCount: datasets.total, datasets: datasets.items, experimentCount: experiments.total, recent: experiments.items }
 }
 
 export default function DashboardPage() {
@@ -42,6 +42,19 @@ export default function DashboardPage() {
           <div className="card stat-card stat-experiments"><div className="stat-top"><span className="label">EXPERIMENTS RUN</span><span className="stat-icon">⌁</span></div><div className="value">{data.experimentCount}</div><div className="hint">Training runs saved to your history</div><div className="stat-bottom"><span className="stat-line"></span><span>EXPERIMENT LOG</span></div></div>
           <div className="card stat-card stat-latest"><div className="stat-top"><span className="label">LATEST ACTIVITY</span><span className="stat-icon">◷</span></div><div className="value stat-text">{latest ? formatDateTime(latest.created_at) : '—'}</div><div className="hint">{latest ? `${formatTask(latest.task_type)} · ${latest.dataset_name}` : 'Your latest run will appear here'}</div><div className="stat-bottom"><span className="stat-line"></span><span>RECENT RUN</span></div></div>
         </div>
+
+        <section className="card recent-card" style={{ marginBottom: 22 }}>
+          <div className="card-header"><div><span className="eyebrow">DATA LIBRARY</span><h2>Recently uploaded datasets</h2><p>Open a dataset to revisit its saved insights and analysis history.</p></div><Link className="text-link" to="/upload">Upload dataset ↗</Link></div>
+          {data.datasets.length === 0 ? <p className="muted">No datasets uploaded yet.</p> : (
+            <div className="dataset-library-list">
+              {data.datasets.map((dataset) => <div className="dataset-library-item" key={dataset.id}>
+                <div className="dataset-library-icon">▤</div>
+                <div className="dataset-library-copy"><strong>{dataset.original_filename}</strong><small>{dataset.row_count.toLocaleString()} rows · {dataset.column_count} columns · {new Date(dataset.uploaded_at).toLocaleDateString()}</small></div>
+                <Link className="btn btn-outline btn-sm" to={`/datasets/${dataset.id}`}>View insights ↗</Link>
+              </div>)}
+            </div>
+          )}
+        </section>
 
         {latest && <section className="latest-banner">
           <div className="latest-symbol">✦</div><div className="latest-copy"><span className="eyebrow">LATEST EXPERIMENT</span><strong>{latest.best_model_name ? shortModelName(latest.best_model_name) : 'Experiment completed'}</strong><p>{latest.best_model_name ? `${METRIC_LABELS[latest.primary_metric]}: ${formatMetric(latest.best_metric_value)} · ${latest.dataset_name}` : `No valid ${METRIC_LABELS[latest.primary_metric]} was produced.`}</p></div>

@@ -8,6 +8,7 @@ import UploadPage from './pages/UploadPage'
 import ConfigurePage from './pages/ConfigurePage'
 import ResultsPage from './pages/ResultsPage'
 import HistoryPage from './pages/HistoryPage'
+import DatasetDetailPage from './pages/DatasetDetailPage'
 
 function NotFound() {
   return <div className="page"><EmptyState title="Page not found" description="The page you are looking for does not exist." action={<Link className="btn btn-primary" to="/">Go to dashboard</Link>} /></div>
@@ -22,6 +23,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<DashboardPage />} />
           <Route path="upload" element={<UploadPage />} />
+          <Route path="datasets/:datasetId" element={<DatasetDetailPage />} />
           <Route path="experiments/new" element={<ConfigurePage />} />
           <Route path="experiments/:experimentId" element={<ResultsPage />} />
           <Route path="history" element={<HistoryPage />} />

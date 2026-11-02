@@ -113,4 +113,15 @@ export function downloadModel(experimentId, modelName) {
     `${modelName}.joblib`,
   )
 }
+
 export default api
+
+export async function getDatasetInsightHistory(datasetId) {
+  const { data } = await api.get(`/datasets/${encodeURIComponent(datasetId)}/insights/history`)
+  return data
+}
+
+export async function regenerateDatasetInsights(datasetId) {
+  const { data } = await api.post(`/datasets/${encodeURIComponent(datasetId)}/insights/regenerate`)
+  return data
+}
