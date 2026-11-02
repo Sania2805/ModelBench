@@ -26,7 +26,7 @@ from app.database.connection import check_database_connection, get_engine
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("modelbench")
 
-REQUIRED_TABLES = {"datasets", "experiments", "model_results"}
+REQUIRED_TABLES = {"datasets", "experiments", "model_results", "users"}
 
 
 @asynccontextmanager
@@ -59,8 +59,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().cors_origin_list,
-    allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
     # Lets the frontend read the download filename from the response headers.
     expose_headers=["Content-Disposition"],

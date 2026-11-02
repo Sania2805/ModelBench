@@ -87,7 +87,7 @@ def db_session(db_engine):
 def _clear_tables(engine) -> None:
     # Delete children before parents to respect the foreign keys.
     with engine.begin() as connection:
-        for table in ("model_results", "experiments", "datasets"):
+        for table in ("model_results", "experiments", "datasets", "users"):
             connection.execute(text(f"DELETE FROM {table}"))
 
 
@@ -96,7 +96,17 @@ def client(db_engine):
     from fastapi.testclient import TestClient
 
     from app.main import app
+    from app.api.auth import require_current_user
+    from app.database.models import User
+    from datetime import datetime
 
+    app.dependency_overrides[require_current_user] = lambda: User(
+        id="test-user",
+        full_name="Test User",
+        email="test@example.com",
+        password_hash="not-used",
+        created_at=datetime.utcnow(),
+    )
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

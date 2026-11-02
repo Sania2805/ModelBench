@@ -14,6 +14,7 @@ Why a Settings class?
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -39,6 +40,12 @@ class Settings(BaseSettings):
     database_password: str
     # Separate database used only by pytest (see app/tests/conftest.py).
     test_database_name: str = "modelbench_test_db"
+
+    # Authentication. AUTH_SECRET_KEY must be a unique random value (32+ characters).
+    auth_secret_key: str = Field(min_length=32)
+    auth_token_expire_minutes: int = Field(default=60, gt=0, le=1440)
+    auth_cookie_secure: bool = False
+    auth_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 
     # --- Upload limits ---
     max_upload_size_mb: float = Field(default=10, gt=0)

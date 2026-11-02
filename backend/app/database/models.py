@@ -51,6 +51,18 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+class User(Base):
+    """Registered ModelBench account. Passwords are stored only as Argon2 hashes."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    full_name: Mapped[str] = mapped_column(String(120))
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(Timestamp, default=utc_now)
+
+
 class Dataset(Base):
     __tablename__ = "datasets"
 
