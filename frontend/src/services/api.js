@@ -1,6 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
+  withCredentials: true,
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
 })
 
@@ -112,3 +113,4 @@ export function downloadModel(experimentId, modelName) {
     `${modelName}.joblib`,
   )
 }
+export default api
