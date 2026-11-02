@@ -238,3 +238,37 @@ def test_experiment_accepts_user_selected_positive_class(client, upload, classif
     body = response.json()
     assert body["positive_class"] == "no"
     assert "positive class 'no'" in body["results"][0]["metric_notes"]["averaging"]
+
+
+def test_experiment_history_and_detail_are_isolated_between_users(client, upload, classification_csv):
+    from datetime import datetime
+    from app.api.auth import require_current_user
+    from app.database.connection import get_session_factory
+    from app.database.models import User
+    from app.main import app
+
+    dataset_id = upload(classification_csv)["dataset"]["id"]
+    experiment_id = run(client, dataset_id, "label", "classification", ["logistic_regression"]).json()["id"]
+
+    other_user = User(
+        id="other-test-user", full_name="Other User", email="other@example.com",
+        password_hash="not-used", created_at=datetime.utcnow(),
+    )
+    seed = get_session_factory()()
+    seed.merge(other_user)
+    seed.commit()
+    seed.close()
+
+    app.dependency_overrides[require_current_user] = lambda: other_user
+    try:
+        assert client.get("/api/experiments").json()["total"] == 0
+        assert client.get(f"/api/experiments/{experiment_id}").status_code == 404
+        assert client.get(f"/api/experiments/{experiment_id}/report").status_code == 404
+        assert client.get(f"/api/experiments/{experiment_id}/models/logistic_regression/download").status_code == 404
+        # Another account cannot start a run against someone else's dataset.
+        assert run(client, dataset_id, "label", "classification", ["logistic_regression"]).status_code == 404
+    finally:
+        app.dependency_overrides[require_current_user] = lambda: User(
+            id="test-user", full_name="Test User", email="test@example.com",
+            password_hash="not-used", created_at=datetime.utcnow(),
+        )

@@ -304,7 +304,7 @@ def build_profile_data(df: pd.DataFrame) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def create_dataset_from_upload(
-    db: Session, settings: Settings, original_filename: str | None, file: BinaryIO
+    db: Session, settings: Settings, original_filename: str | None, file: BinaryIO, owner_id: str
 ) -> tuple[Dataset, pd.DataFrame]:
     """Validate an uploaded CSV, save it to disk and record it in MySQL."""
     if not has_allowed_extension(original_filename):
@@ -322,6 +322,7 @@ def create_dataset_from_upload(
 
     dataset = Dataset(
         id=dataset_id,
+        owner_id=owner_id,
         original_filename=sanitize_display_filename(original_filename),
         stored_filename=stored_filename,
         file_size_bytes=len(content),
@@ -342,8 +343,8 @@ def create_dataset_from_upload(
     return dataset, df
 
 
-def get_dataset(db: Session, dataset_id: str) -> Dataset:
-    dataset = db.get(Dataset, dataset_id)
+def get_dataset(db: Session, dataset_id: str, owner_id: str) -> Dataset:
+    dataset = db.scalar(select(Dataset).where(Dataset.id == dataset_id, Dataset.owner_id == owner_id))
     if dataset is None:
         raise NotFoundError("Dataset not found.")
     return dataset
@@ -355,9 +356,10 @@ def load_dataframe(dataset: Dataset, settings: Settings) -> pd.DataFrame:
     return pd.read_csv(path, encoding=dataset.file_encoding, low_memory=False)
 
 
-def list_datasets(db: Session, limit: int, offset: int) -> tuple[int, list[Dataset]]:
-    total = db.scalar(select(func.count()).select_from(Dataset)) or 0
-    rows = db.scalars(select(Dataset).order_by(Dataset.uploaded_at.desc()).limit(limit).offset(offset)).all()
+def list_datasets(db: Session, limit: int, offset: int, owner_id: str) -> tuple[int, list[Dataset]]:
+    owned = Dataset.owner_id == owner_id
+    total = db.scalar(select(func.count()).select_from(Dataset).where(owned)) or 0
+    rows = db.scalars(select(Dataset).where(owned).order_by(Dataset.uploaded_at.desc()).limit(limit).offset(offset)).all()
     return total, list(rows)
 
 

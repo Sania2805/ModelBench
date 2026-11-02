@@ -144,3 +144,40 @@ def test_saved_insights_endpoints(client, upload, classification_csv):
     assert history.status_code == 200
     assert history.json()["total"] == 2
     assert [item["version"] for item in history.json()["items"]] == [2, 1]
+
+
+def test_datasets_and_insights_are_isolated_between_users(client, upload, classification_csv):
+    """A second authenticated account cannot list or fetch another user's data."""
+    from datetime import datetime
+    from app.api.auth import require_current_user
+    from app.database.connection import get_session_factory
+    from app.database.models import User
+    from app.main import app
+
+    dataset_id = upload(classification_csv)["dataset"]["id"]
+
+    other_user = User(
+        id="other-test-user",
+        full_name="Other User",
+        email="other@example.com",
+        password_hash="not-used",
+        created_at=datetime.utcnow(),
+    )
+    seed = get_session_factory()()
+    seed.merge(other_user)
+    seed.commit()
+    seed.close()
+
+    app.dependency_overrides[require_current_user] = lambda: other_user
+    try:
+        assert client.get("/api/datasets").json()["total"] == 0
+        assert client.get(f"/api/datasets/{dataset_id}/profile").status_code == 404
+        assert client.get(f"/api/datasets/{dataset_id}/insights").status_code == 404
+        assert client.get(f"/api/datasets/{dataset_id}/insights/history").status_code == 404
+        assert client.post(f"/api/datasets/{dataset_id}/insights/regenerate").status_code == 404
+        assert client.get(f"/api/datasets/{dataset_id}/target-classes?target_column=label").status_code == 404
+    finally:
+        app.dependency_overrides[require_current_user] = lambda: User(
+            id="test-user", full_name="Test User", email="test@example.com",
+            password_hash="not-used", created_at=datetime.utcnow(),
+        )

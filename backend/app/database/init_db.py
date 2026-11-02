@@ -16,8 +16,10 @@ so schema changes can be applied step by step. All models are registered on
 `Base.metadata`, which is exactly what Alembic needs, so that upgrade is easy.
 """
 
+import shutil
 import sys
 
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import ConfigurationError, get_settings
@@ -26,7 +28,33 @@ from app.database.connection import Base, get_engine
 
 
 def init_db() -> None:
-    Base.metadata.create_all(bind=get_engine())
+    engine = get_engine()
+    # Create any brand-new tables first (notably users on older installations).
+    Base.metadata.create_all(bind=engine)
+
+    # create_all() does not alter existing tables. Older ModelBench databases
+    # have datasets without an owner_id, so safely discard legacy user data
+    # before adding a NOT NULL ownership column. The user accounts themselves
+    # are retained and can sign in normally; they simply start with empty data.
+    columns = {column["name"] for column in inspect(engine).get_columns("datasets")}
+    if "owner_id" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("DELETE FROM model_results"))
+            connection.execute(text("DELETE FROM experiments"))
+            connection.execute(text("DELETE FROM dataset_insights"))
+            connection.execute(text("DELETE FROM datasets"))
+            connection.execute(text(
+                "ALTER TABLE datasets "
+                "ADD COLUMN owner_id VARCHAR(36) NOT NULL, "
+                "ADD CONSTRAINT fk_datasets_owner_id_users FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE, "
+                "ADD INDEX ix_datasets_owner_id (owner_id)"
+            ))
+        # Remove legacy uploaded CSVs, trained artifacts and generated reports
+        # too: they no longer have database records and belong to no account.
+        settings = get_settings()
+        for storage_path in (settings.upload_path, settings.artifact_path, settings.report_path):
+            shutil.rmtree(storage_path, ignore_errors=True)
+            storage_path.mkdir(parents=True, exist_ok=True)
 
 
 def main() -> int:

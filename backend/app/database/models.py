@@ -67,6 +67,7 @@ class Dataset(Base):
     __tablename__ = "datasets"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     original_filename: Mapped[str] = mapped_column(String(255))
     # Server-generated name inside uploads/, e.g. "3f2c...e1.csv". Never a client path.
     stored_filename: Mapped[str] = mapped_column(String(255), unique=True)
@@ -78,6 +79,7 @@ class Dataset(Base):
     columns_metadata: Mapped[list] = mapped_column(JSON)
     uploaded_at: Mapped[datetime] = mapped_column(Timestamp, default=utc_now, index=True)
 
+    owner: Mapped["User"] = relationship()
     experiments: Mapped[list["Experiment"]] = relationship(back_populates="dataset")
     insight_snapshots: Mapped[list["DatasetInsight"]] = relationship(
         back_populates="dataset", cascade="all, delete-orphan", order_by="DatasetInsight.generated_at.desc()"

@@ -11,6 +11,8 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.api.auth import require_current_user
+from app.database.models import User
 from app.database.connection import get_db
 from app.schemas.dataset import (
     DatasetInsightHistory, DatasetInsightSnapshot, DatasetListResponse, DatasetProfile, DatasetSummary,
@@ -25,8 +27,9 @@ def upload_dataset(
     file: UploadFile = File(..., description="A CSV file"),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    current_user: User = Depends(require_current_user),
 ) -> DatasetProfile:
-    dataset, df = dataset_service.create_dataset_from_upload(db, settings, file.filename, file.file)
+    dataset, df = dataset_service.create_dataset_from_upload(db, settings, file.filename, file.file, current_user.id)
     profile_data = dataset_service.build_profile_data(df)
     snapshot = dataset_service.save_insight_snapshot(db, dataset.id, profile_data)
     return DatasetProfile(
@@ -43,8 +46,9 @@ def list_datasets(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_current_user),
 ) -> DatasetListResponse:
-    total, datasets = dataset_service.list_datasets(db, limit, offset)
+    total, datasets = dataset_service.list_datasets(db, limit, offset, current_user.id)
     return DatasetListResponse(total=total, items=[DatasetSummary.model_validate(d) for d in datasets])
 
 
@@ -53,8 +57,9 @@ def get_dataset_profile(
     dataset_id: str,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    current_user: User = Depends(require_current_user),
 ) -> DatasetProfile:
-    dataset = dataset_service.get_dataset(db, dataset_id)
+    dataset = dataset_service.get_dataset(db, dataset_id, current_user.id)
     snapshot = dataset_service.get_latest_insight(db, dataset_id)
     if snapshot is None:
         # Backfill datasets uploaded before persistent insight snapshots existed.
@@ -75,9 +80,10 @@ def get_saved_insights(
     dataset_id: str,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    current_user: User = Depends(require_current_user),
 ) -> DatasetInsightSnapshot:
     """Return the latest saved analysis, creating a first snapshot for legacy datasets."""
-    dataset = dataset_service.get_dataset(db, dataset_id)
+    dataset = dataset_service.get_dataset(db, dataset_id, current_user.id)
     snapshot = dataset_service.get_latest_insight(db, dataset_id)
     if snapshot is None:
         df = dataset_service.load_dataframe(dataset, settings)
@@ -92,8 +98,8 @@ def get_saved_insights(
 
 
 @router.get("/{dataset_id}/insights/history", response_model=DatasetInsightHistory)
-def get_insight_history(dataset_id: str, db: Session = Depends(get_db)) -> DatasetInsightHistory:
-    dataset_service.get_dataset(db, dataset_id)
+def get_insight_history(dataset_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_current_user)) -> DatasetInsightHistory:
+    dataset_service.get_dataset(db, dataset_id, current_user.id)
     snapshots = dataset_service.list_insight_snapshots(db, dataset_id)
     return DatasetInsightHistory(
         dataset_id=dataset_id,
@@ -111,9 +117,10 @@ def regenerate_insights(
     dataset_id: str,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    current_user: User = Depends(require_current_user),
 ) -> DatasetInsightSnapshot:
     """Recalculate EDA from the stored CSV and persist it as a new version."""
-    dataset = dataset_service.get_dataset(db, dataset_id)
+    dataset = dataset_service.get_dataset(db, dataset_id, current_user.id)
     df = dataset_service.load_dataframe(dataset, settings)
     snapshot = dataset_service.save_insight_snapshot(
         db, dataset_id, dataset_service.build_profile_data(df)
@@ -131,9 +138,10 @@ def get_target_classes(
     target_column: str = Query(..., min_length=1, max_length=255),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    current_user: User = Depends(require_current_user),
 ) -> dict:
     """Return distinct labels for a classification target so the UI can offer positive-class selection."""
-    dataset = dataset_service.get_dataset(db, dataset_id)
+    dataset = dataset_service.get_dataset(db, dataset_id, current_user.id)
     df = dataset_service.load_dataframe(dataset, settings)
     if target_column not in df.columns:
         from app.core.errors import DataValidationError

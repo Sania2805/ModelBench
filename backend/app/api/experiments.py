@@ -7,6 +7,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.api.auth import require_current_user
+from app.database.models import User
 from app.database.connection import get_db
 from app.schemas.experiment import (
     AvailableModel,
@@ -41,10 +43,11 @@ def create_experiment(
     request: ExperimentCreate,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    current_user: User = Depends(require_current_user),
 ) -> dict:
-    experiment = experiment_service.run_experiment(db, settings, request)
+    experiment = experiment_service.run_experiment(db, settings, request, current_user.id)
     # Re-load with relationships so the response contains dataset info and results.
-    return experiment_service.build_experiment_detail(experiment_service.get_experiment(db, experiment.id))
+    return experiment_service.build_experiment_detail(experiment_service.get_experiment(db, experiment.id, current_user.id))
 
 
 @router.get("/experiments", response_model=ExperimentListResponse)
@@ -52,13 +55,14 @@ def list_experiments(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_current_user),
 ) -> dict:
-    return experiment_service.list_experiments(db, page, page_size)
+    return experiment_service.list_experiments(db, page, page_size, current_user.id)
 
 
 @router.get("/experiments/{experiment_id}", response_model=ExperimentDetail)
-def get_experiment(experiment_id: str, db: Session = Depends(get_db)) -> dict:
-    return experiment_service.build_experiment_detail(experiment_service.get_experiment(db, experiment_id))
+def get_experiment(experiment_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_current_user)) -> dict:
+    return experiment_service.build_experiment_detail(experiment_service.get_experiment(db, experiment_id, current_user.id))
 
 
 @router.get("/experiments/{experiment_id}/report", response_class=FileResponse)
@@ -66,8 +70,9 @@ def download_report(
     experiment_id: str,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    current_user: User = Depends(require_current_user),
 ) -> FileResponse:
-    experiment = experiment_service.get_experiment(db, experiment_id)
+    experiment = experiment_service.get_experiment(db, experiment_id, current_user.id)
     path = report_service.generate_report(experiment, settings)
     return FileResponse(path, media_type="text/html", filename=path.name)
 
@@ -78,8 +83,9 @@ def download_model(
     model_name: str,
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    current_user: User = Depends(require_current_user),
 ) -> FileResponse:
-    path = experiment_service.get_artifact_path(db, settings, experiment_id, model_name)
+    path = experiment_service.get_artifact_path(db, settings, experiment_id, model_name, current_user.id)
     return FileResponse(
         path,
         media_type="application/octet-stream",

@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import Settings
 from app.core.errors import ConflictError, DataValidationError, NotFoundError
 from app.core.security import new_id, resolve_safe_path
-from app.database.models import Experiment, ModelResult, utc_now
+from app.database.models import Dataset, Experiment, ModelResult, utc_now
 from app.schemas.experiment import ExperimentCreate
 from app.services import dataset_service
 from app.services.evaluation_service import PRIMARY_METRICS, pick_best_model
@@ -53,9 +53,9 @@ def validate_model_selection(task_type: str, model_names: list[str]) -> None:
         )
 
 
-def run_experiment(db: Session, settings: Settings, request: ExperimentCreate) -> Experiment:
+def run_experiment(db: Session, settings: Settings, request: ExperimentCreate, owner_id: str) -> Experiment:
     validate_model_selection(request.task_type, request.model_names)
-    dataset = dataset_service.get_dataset(db, request.dataset_id)
+    dataset = dataset_service.get_dataset(db, request.dataset_id, owner_id)
     df = dataset_service.load_dataframe(dataset, settings)
 
     # Pure validation + split. Raises DataValidationError before anything is saved.
@@ -170,12 +170,13 @@ def _mark_failed(db: Session, experiment_id: str, message: str) -> None:
 # Reading experiments back
 # ---------------------------------------------------------------------------
 
-def get_experiment(db: Session, experiment_id: str) -> Experiment:
+def get_experiment(db: Session, experiment_id: str, owner_id: str) -> Experiment:
     # selectinload fetches the dataset and results in a couple of extra queries
     # up front, instead of one query per result later (the "N+1" problem).
     experiment = db.scalar(
         select(Experiment)
-        .where(Experiment.id == experiment_id)
+        .join(Dataset, Experiment.dataset_id == Dataset.id)
+        .where(Experiment.id == experiment_id, Dataset.owner_id == owner_id)
         .options(selectinload(Experiment.results), selectinload(Experiment.dataset))
     )
     if experiment is None:
@@ -253,10 +254,13 @@ def build_experiment_detail(experiment: Experiment) -> dict[str, Any]:
     }
 
 
-def list_experiments(db: Session, page: int, page_size: int) -> dict[str, Any]:
-    total = db.scalar(select(func.count()).select_from(Experiment)) or 0
+def list_experiments(db: Session, page: int, page_size: int, owner_id: str) -> dict[str, Any]:
+    owned = Dataset.owner_id == owner_id
+    total = db.scalar(select(func.count()).select_from(Experiment).join(Dataset, Experiment.dataset_id == Dataset.id).where(owned)) or 0
     experiments = db.scalars(
         select(Experiment)
+        .join(Dataset, Experiment.dataset_id == Dataset.id)
+        .where(owned)
         .options(selectinload(Experiment.results), selectinload(Experiment.dataset))
         .order_by(Experiment.created_at.desc())
         .limit(page_size)
@@ -287,7 +291,7 @@ def list_experiments(db: Session, page: int, page_size: int) -> dict[str, Any]:
     return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
-def get_artifact_path(db: Session, settings: Settings, experiment_id: str, model_name: str):
+def get_artifact_path(db: Session, settings: Settings, experiment_id: str, model_name: str, owner_id: str):
     """
     Find the .joblib file for one model of one experiment.
 
@@ -296,9 +300,9 @@ def get_artifact_path(db: Session, settings: Settings, experiment_id: str, model
     choose a filesystem path.
     """
     result = db.scalar(
-        select(ModelResult).where(
-            ModelResult.experiment_id == experiment_id, ModelResult.model_name == model_name
-        )
+        select(ModelResult).join(Experiment, ModelResult.experiment_id == Experiment.id)
+        .join(Dataset, Experiment.dataset_id == Dataset.id)
+        .where(Experiment.id == experiment_id, Dataset.owner_id == owner_id, ModelResult.model_name == model_name)
     )
     if result is None:
         raise NotFoundError("This model was not part of the experiment.")

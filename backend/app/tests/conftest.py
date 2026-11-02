@@ -98,15 +98,21 @@ def client(db_engine):
     from app.main import app
     from app.api.auth import require_current_user
     from app.database.models import User
+    from app.database.connection import get_session_factory
     from datetime import datetime
 
-    app.dependency_overrides[require_current_user] = lambda: User(
+    test_user = User(
         id="test-user",
         full_name="Test User",
         email="test@example.com",
         password_hash="not-used",
         created_at=datetime.utcnow(),
     )
+    seed = get_session_factory()()
+    seed.merge(test_user)
+    seed.commit()
+    seed.close()
+    app.dependency_overrides[require_current_user] = lambda: test_user
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
