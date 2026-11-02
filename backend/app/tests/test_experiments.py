@@ -12,8 +12,16 @@ from app.database.models import Experiment, ModelResult
 from app.services import training_service
 from app.tests.conftest import make_classification_df, to_csv_bytes
 
-CLASSIFIERS = ["logistic_regression", "decision_tree_classifier", "random_forest_classifier"]
-REGRESSORS = ["linear_regression", "decision_tree_regressor", "random_forest_regressor"]
+CLASSIFIERS = [
+    "logistic_regression", "decision_tree_classifier", "random_forest_classifier",
+    "knn_classifier", "svc", "gaussian_nb", "gradient_boosting_classifier",
+    "adaboost_classifier", "extra_trees_classifier",
+]
+REGRESSORS = [
+    "linear_regression", "decision_tree_regressor", "random_forest_regressor",
+    "ridge_regression", "lasso_regression", "elasticnet_regression", "knn_regressor",
+    "svr", "gradient_boosting_regressor", "adaboost_regressor", "extra_trees_regressor",
+]
 
 
 def run(client, dataset_id, target, task, models, **extra):
@@ -24,6 +32,14 @@ def run(client, dataset_id, target, task, models, **extra):
 def test_available_models_are_filtered_by_task(client):
     names = {m["name"] for m in client.get("/api/models?task_type=regression").json()}
     assert names == set(REGRESSORS)
+
+
+def test_available_models_include_user_parameter_schemas(client):
+    models = client.get("/api/models?task_type=classification").json()
+    by_name = {model["name"]: model for model in models}
+    assert len(by_name) == 9
+    assert by_name["random_forest_classifier"]["parameter_schema"]["n_estimators"]["default"] == 100
+    assert by_name["knn_classifier"]["parameter_schema"]["n_neighbors"]["default"] == 5
 
 
 def test_classification_experiment_end_to_end(client, upload, classification_csv, db_session, settings):
@@ -82,6 +98,31 @@ def test_regression_experiment_end_to_end(client, upload, regression_csv):
     for result in body["results"]:
         assert "confusion_matrix" not in result["chart_data"]
         assert len(result["chart_data"]["actual_vs_predicted"]) == body["run_metadata"]["test_rows"]
+
+
+def test_custom_hyperparameters_are_used_and_saved(client, upload, classification_csv):
+    dataset_id = upload(classification_csv)["dataset"]["id"]
+    response = run(
+        client, dataset_id, "label", "classification", ["random_forest_classifier"],
+        model_hyperparameters={"random_forest_classifier": {"n_estimators": 150, "max_depth": 5, "min_samples_leaf": 2}},
+    )
+    assert response.status_code == 201, response.text
+    result = response.json()["results"][0]
+    assert result["status"] == "success"
+    assert result["hyperparameters"]["n_estimators"] == 150
+    assert result["hyperparameters"]["max_depth"] == 5
+    assert result["hyperparameters"]["min_samples_leaf"] == 2
+
+
+def test_invalid_hyperparameters_are_rejected_before_experiment(client, upload, classification_csv, db_session):
+    dataset_id = upload(classification_csv)["dataset"]["id"]
+    response = run(
+        client, dataset_id, "label", "classification", ["random_forest_classifier"],
+        model_hyperparameters={"random_forest_classifier": {"n_estimators": 0}},
+    )
+    assert response.status_code == 422
+    assert "n_estimators" in response.json()["detail"]
+    assert db_session.query(Experiment).count() == 0
 
 
 def test_invalid_target_column_creates_no_experiment(client, upload, classification_csv, db_session):

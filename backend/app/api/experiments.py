@@ -33,6 +33,7 @@ def list_available_models(task_type: Literal["classification", "regression"] | N
             task_type=s.task_type,
             description=s.description,
             hyperparameters=s.hyperparameters,
+            parameter_schema=s.parameter_schema,
         )
         for s in specs
     ]

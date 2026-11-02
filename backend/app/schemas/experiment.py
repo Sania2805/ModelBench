@@ -15,7 +15,9 @@ class ExperimentCreate(BaseModel):
     dataset_id: str = Field(min_length=1, max_length=36)
     target_column: str = Field(min_length=1, max_length=255)
     task_type: TaskType
-    model_names: list[str] = Field(min_length=1, max_length=10)
+    model_names: list[str] = Field(min_length=1, max_length=20)
+    # Optional per-model overrides. Omitted values retain each model's defaults.
+    model_hyperparameters: dict[str, dict[str, Any]] = Field(default_factory=dict)
     # 10%–50% test data. Outside this range results become unreliable or the
     # model has too little data to learn from.
     test_size: float = Field(default=0.2, ge=0.1, le=0.5)
@@ -40,6 +42,7 @@ class AvailableModel(BaseModel):
     task_type: TaskType
     description: str
     hyperparameters: dict[str, Any]
+    parameter_schema: dict[str, dict[str, Any]]
 
 
 class ModelResultOut(BaseModel):

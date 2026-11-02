@@ -55,6 +55,17 @@ def validate_model_selection(task_type: str, model_names: list[str]) -> None:
 
 def run_experiment(db: Session, settings: Settings, request: ExperimentCreate, owner_id: str) -> Experiment:
     validate_model_selection(request.task_type, request.model_names)
+    # Validate user-supplied hyperparameters before creating any database rows.
+    unknown_model_settings = set(request.model_hyperparameters) - set(request.model_names)
+    if unknown_model_settings:
+        raise DataValidationError(
+            f"Hyperparameters were supplied for unselected model(s): {', '.join(sorted(unknown_model_settings))}."
+        )
+    try:
+        for model_name in request.model_names:
+            MODEL_REGISTRY[model_name].resolve_hyperparameters(request.model_hyperparameters.get(model_name))
+    except ValueError as error:
+        raise DataValidationError(str(error)) from error
     dataset = dataset_service.get_dataset(db, request.dataset_id, owner_id)
     df = dataset_service.load_dataframe(dataset, settings)
 
@@ -85,14 +96,14 @@ def run_experiment(db: Session, settings: Settings, request: ExperimentCreate, o
         random_seed=request.random_seed,
         status="running",
         primary_metric=primary_metric,
-        run_metadata={**data.metadata, "warnings": data.warnings, "model_selection_method": "validation holdout; final metrics reported on untouched test set", "primary_metric": primary_metric, "balance_classes": request.balance_classes},
+        run_metadata={**data.metadata, "warnings": data.warnings, "model_selection_method": "validation holdout; final metrics reported on untouched test set", "primary_metric": primary_metric, "balance_classes": request.balance_classes, "model_hyperparameters": request.model_hyperparameters},
     )
     db.add(experiment)
     db.commit()
 
     artifact_dir = settings.artifact_path / experiment.id
     try:
-        result_rows = _train_all_models(experiment, data, artifact_dir)
+        result_rows = _train_all_models(experiment, data, artifact_dir, request.model_hyperparameters)
         successes = [r for r in result_rows if r["status"] == "success"]
 
         for row in result_rows:
@@ -122,7 +133,7 @@ def run_experiment(db: Session, settings: Settings, request: ExperimentCreate, o
     return experiment
 
 
-def _train_all_models(experiment: Experiment, data, artifact_dir) -> list[dict[str, Any]]:
+def _train_all_models(experiment: Experiment, data, artifact_dir, model_hyperparameters: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Train every selected model, saving artifacts for those that succeed."""
     rows: list[dict[str, Any]] = []
     for model_name in experiment.selected_models:
@@ -131,6 +142,7 @@ def _train_all_models(experiment: Experiment, data, artifact_dir) -> list[dict[s
             outcome = train_and_evaluate(
                 spec, data, experiment.task_type, experiment.random_seed,
                 balance_classes=bool((experiment.run_metadata or {}).get("balance_classes", False)),
+                hyperparameters=(model_hyperparameters or {}).get(model_name),
             )
         except Exception as error:  # one model failing must not stop the others
             logger.warning("Model %s failed in experiment %s: %s", model_name, experiment.id, error)

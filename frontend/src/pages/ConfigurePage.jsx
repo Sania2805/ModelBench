@@ -59,6 +59,7 @@ export default function ConfigurePage() {
   const [target, setTarget] = useState('')
   const [taskType, setTaskType] = useState('')
   const [selectedModels, setSelectedModels] = useState([])
+  const [modelHyperparameters, setModelHyperparameters] = useState({})
   const [testSize, setTestSize] = useState(0.2)
   const [seed, setSeed] = useState('42')
   const [positiveClass, setPositiveClass] = useState('')
@@ -88,6 +89,10 @@ export default function ConfigurePage() {
 
   useEffect(() => {
     setSelectedModels(models.data ? models.data.map((m) => m.name) : [])
+    setModelHyperparameters(Object.fromEntries((models.data || []).map((model) => [
+      model.name,
+      Object.fromEntries(Object.entries(model.parameter_schema || {}).map(([key, definition]) => [key, definition.default])),
+    ])))
   }, [models.data])
 
   useEffect(() => {
@@ -164,6 +169,7 @@ export default function ConfigurePage() {
         target_column: target,
         task_type: taskType,
         model_names: selectedModels,
+        model_hyperparameters: Object.fromEntries(selectedModels.map((name) => [name, modelHyperparameters[name] || {}])),
         test_size: testSize,
         random_seed: seedNumber,
         ...(taskType === 'classification' && targetClasses?.positive_class_selection && positiveClass
@@ -273,15 +279,51 @@ export default function ConfigurePage() {
           <div className="option-list">
             {models.data?.map((model) => {
               const checked = selectedModels.includes(model.name)
+              const definitions = Object.entries(model.parameter_schema || {})
               return (
-                <label key={model.name} className={`option ${checked ? 'checked' : ''}`}>
-                  <input type="checkbox" checked={checked} onChange={() => toggleModel(model.name)} />
-                  <div>
-                    <div className="title">{model.display_name}</div>
-                    <div className="desc">{model.description}</div>
-                    <div className="desc mono">{Object.entries(model.hyperparameters).filter(([k]) => k !== 'random_state' && k !== 'n_jobs').map(([k, v]) => `${k}=${v === null ? 'None' : v}`).join(', ')}</div>
-                  </div>
-                </label>
+                <div key={model.name} className={`option ${checked ? 'checked' : ''}`} style={{ flexDirection: 'column' }}>
+                  <label className="check-row" style={{ alignItems: 'flex-start', border: 0, padding: 0, width: '100%' }}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleModel(model.name)} />
+                    <span>
+                      <span className="title">{model.display_name}</span>
+                      <span className="desc">{model.description}</span>
+                      <span className="desc mono">Defaults: {Object.entries(model.hyperparameters).filter(([k]) => k !== 'random_state' && k !== 'n_jobs' && !definitions.some(([parameter]) => parameter === k)).map(([k, v]) => `${k}=${v === null ? 'None' : v}`).join(', ') || 'Shown below'}</span>
+                    </span>
+                  </label>
+                  {checked && definitions.length > 0 && (
+                    <div className="grid grid-2" style={{ marginTop: 12, paddingLeft: 28 }}>
+                      {definitions.map(([key, definition]) => {
+                        const value = modelHyperparameters[model.name]?.[key] ?? definition.default
+                        const fieldId = `hp-${model.name}-${key}`
+                        return (
+                          <div className="field" key={key}>
+                            <label htmlFor={fieldId}>{definition.label || key}</label>
+                            {definition.type === 'select' ? (
+                              <select id={fieldId} className="select" value={value === null ? '__none__' : String(value)}
+                                onChange={(event) => {
+                                  const raw = event.target.value
+                                  const selected = raw === '__none__' ? null : (definition.options.find((option) => String(option) === raw) ?? raw)
+                                  setModelHyperparameters((current) => ({ ...current, [model.name]: { ...current[model.name], [key]: selected } }))
+                                }}>
+                                {definition.options.map((option) => <option key={String(option)} value={option === null ? '__none__' : String(option)}>{option === null ? 'Unlimited (None)' : String(option)}</option>)}
+                              </select>
+                            ) : definition.type === 'boolean' ? (
+                              <label className="check-row"><input id={fieldId} type="checkbox" checked={Boolean(value)} onChange={(event) => setModelHyperparameters((current) => ({ ...current, [model.name]: { ...current[model.name], [key]: event.target.checked } }))} /><span>{value ? 'Enabled' : 'Disabled'}</span></label>
+                            ) : (
+                              <input id={fieldId} className="input" type="number" min={definition.min} max={definition.max}
+                                step={definition.type === 'number' ? 'any' : (definition.step ?? 1)}
+                                value={value} onChange={(event) => {
+                                  const parsed = definition.type === 'integer' ? Number.parseInt(event.target.value, 10) : Number(event.target.value)
+                                  if (event.target.value !== '' && Number.isFinite(parsed)) setModelHyperparameters((current) => ({ ...current, [model.name]: { ...current[model.name], [key]: parsed } }))
+                                }} />
+                            )}
+                            <span className="help">Default: {definition.default === null ? 'Unlimited' : String(definition.default)}{definition.min !== undefined ? ` · Range: ${definition.min}–${definition.max}` : ''}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               )
             })}
           </div>

@@ -105,7 +105,7 @@ def _summary_sentences(detail: dict[str, Any]) -> list[str]:
         sentences.append(f"{len(failed)} model(s) failed to train: {', '.join(r['display_name'] for r in failed)}.")
     sentences.append(
         "Models are selected using a validation split; the reported metrics are calculated on a separate, untouched test split. "
-        "A single split and default hyperparameters do not guarantee which model will generalise best to new data."
+        "A single split does not guarantee which model will generalise best to new data, even when hyperparameters are adjusted."
     )
     return sentences
 
