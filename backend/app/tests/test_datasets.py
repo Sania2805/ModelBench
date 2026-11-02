@@ -23,6 +23,10 @@ def test_upload_valid_csv_returns_profile(client, classification_csv, settings, 
     assert body["categorical_column_count"] == 2
     assert body["total_missing_values"] == 5
     assert len(body["preview"]) == 10
+    assert body["insight_id"]
+    assert body["insight_version"] == 1
+    assert "missing_by_column" in body
+    assert "recommendations" in body
     assert set(body["numeric_statistics"]) == {"x1", "x2"}
     columns = {c["name"]: c for c in body["columns"]}
     assert columns["x1"]["missing_count"] == 3
@@ -123,3 +127,20 @@ def test_upload_ignores_path_in_filename(client, classification_csv):
 def test_profile_unknown_dataset_returns_404(client):
     response = client.get("/api/datasets/00000000-0000-0000-0000-000000000000/profile")
     assert response.status_code == 404
+
+
+def test_saved_insights_endpoints(client, upload, classification_csv):
+    dataset_id = upload(classification_csv)["dataset"]["id"]
+    latest = client.get(f"/api/datasets/{dataset_id}/insights")
+    assert latest.status_code == 200
+    assert latest.json()["version"] == 1
+    assert "correlation_matrix" in latest.json()["profile"]
+
+    regenerated = client.post(f"/api/datasets/{dataset_id}/insights/regenerate")
+    assert regenerated.status_code == 201
+    assert regenerated.json()["version"] == 2
+
+    history = client.get(f"/api/datasets/{dataset_id}/insights/history")
+    assert history.status_code == 200
+    assert history.json()["total"] == 2
+    assert [item["version"] for item in history.json()["items"]] == [2, 1]

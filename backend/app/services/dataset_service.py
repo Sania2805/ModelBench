@@ -31,7 +31,7 @@ from app.core.security import (
     resolve_safe_path,
     sanitize_display_filename,
 )
-from app.database.models import Dataset
+from app.database.models import Dataset, DatasetInsight, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +237,51 @@ def build_profile_data(df: pd.DataFrame) -> dict[str, Any]:
                 "One-hot encoding it creates many features and may slow training."
             )
 
+    missing_by_column = {
+        col["name"]: {
+            "missing_count": col["missing_count"],
+            "missing_percent": col["missing_percent"],
+        }
+        for col in columns
+    }
+
+    # Keep the matrix useful and bounded for wide datasets. Non-finite values
+    # (e.g. constant columns) are converted to null for MySQL JSON compatibility.
+    correlation_columns = numeric_cols[:40]
+    correlation_matrix: dict[str, dict[str, float | None]] = {}
+    if len(correlation_columns) >= 2:
+        corr = df[correlation_columns].corr(numeric_only=True)
+        for row_name in corr.index:
+            correlation_matrix[str(row_name)] = {
+                str(col_name): _json_safe_number(corr.loc[row_name, col_name])
+                for col_name in corr.columns
+            }
+
+    recommendations = []
+    total_cells = max(int(df.shape[0] * df.shape[1]), 1)
+    missing_percent = 100 * int(df.isna().sum().sum()) / total_cells
+    if missing_percent > 0:
+        recommendations.append(
+            f"Review missing values: {int(df.isna().sum().sum()):,} cells ({missing_percent:.1f}% of the dataset) are empty."
+        )
+    if duplicate_rows:
+        recommendations.append(
+            f"Consider removing or investigating {duplicate_rows:,} duplicate rows before training."
+        )
+    for col in columns:
+        if col["likely_identifier"]:
+            recommendations.append(
+                f"Review '{col['name']}' because it appears identifier-like and may not generalize as a predictive feature."
+            )
+        if col["missing_percent"] >= 50:
+            recommendations.append(
+                f"'{col['name']}' has {col['missing_percent']:.1f}% missing values; consider whether it should be retained."
+            )
+    if len(numeric_cols) > 40:
+        recommendations.append("Correlation analysis is limited to the first 40 numeric columns to keep the saved report compact.")
+    if not recommendations:
+        recommendations.append("No major data-quality warnings were detected by the automated checks.")
+
     return {
         "columns": columns,
         "numeric_column_count": len(numeric_cols),
@@ -246,6 +291,10 @@ def build_profile_data(df: pd.DataFrame) -> dict[str, Any]:
         "preview": preview,
         "numeric_statistics": numeric_statistics,
         "categorical_statistics": categorical_statistics,
+        "missing_by_column": missing_by_column,
+        "correlation_matrix": correlation_matrix,
+        "correlation_columns_analyzed": len(correlation_columns),
+        "recommendations": recommendations,
         "warnings": warnings,
     }
 
@@ -310,3 +359,43 @@ def list_datasets(db: Session, limit: int, offset: int) -> tuple[int, list[Datas
     total = db.scalar(select(func.count()).select_from(Dataset)) or 0
     rows = db.scalars(select(Dataset).order_by(Dataset.uploaded_at.desc()).limit(limit).offset(offset)).all()
     return total, list(rows)
+
+
+# ---------------------------------------------------------------------------
+# Persistent insight snapshots
+# ---------------------------------------------------------------------------
+
+def save_insight_snapshot(db: Session, dataset_id: str, profile: dict[str, Any]) -> DatasetInsight:
+    """Save a new immutable version of a dataset's analysis."""
+    latest_version = db.scalar(
+        select(func.max(DatasetInsight.version)).where(DatasetInsight.dataset_id == dataset_id)
+    ) or 0
+    snapshot = DatasetInsight(
+        id=new_id(),
+        dataset_id=dataset_id,
+        version=int(latest_version) + 1,
+        schema_version=1,
+        insights_json=profile,
+        generated_at=utc_now(),
+    )
+    db.add(snapshot)
+    db.commit()
+    db.refresh(snapshot)
+    return snapshot
+
+
+def get_latest_insight(db: Session, dataset_id: str) -> DatasetInsight | None:
+    return db.scalars(
+        select(DatasetInsight)
+        .where(DatasetInsight.dataset_id == dataset_id)
+        .order_by(DatasetInsight.version.desc())
+        .limit(1)
+    ).first()
+
+
+def list_insight_snapshots(db: Session, dataset_id: str) -> list[DatasetInsight]:
+    return list(db.scalars(
+        select(DatasetInsight)
+        .where(DatasetInsight.dataset_id == dataset_id)
+        .order_by(DatasetInsight.version.desc())
+    ).all())

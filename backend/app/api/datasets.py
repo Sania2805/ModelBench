@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.database.connection import get_db
-from app.schemas.dataset import DatasetListResponse, DatasetProfile, DatasetSummary
+from app.schemas.dataset import (
+    DatasetInsightHistory, DatasetInsightSnapshot, DatasetListResponse, DatasetProfile, DatasetSummary,
+)
 from app.services import dataset_service
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -25,8 +27,14 @@ def upload_dataset(
     settings: Settings = Depends(get_settings),
 ) -> DatasetProfile:
     dataset, df = dataset_service.create_dataset_from_upload(db, settings, file.filename, file.file)
+    profile_data = dataset_service.build_profile_data(df)
+    snapshot = dataset_service.save_insight_snapshot(db, dataset.id, profile_data)
     return DatasetProfile(
-        dataset=DatasetSummary.model_validate(dataset), **dataset_service.build_profile_data(df)
+        dataset=DatasetSummary.model_validate(dataset),
+        **profile_data,
+        insight_id=snapshot.id,
+        insight_version=snapshot.version,
+        insights_generated_at=snapshot.generated_at,
     )
 
 
@@ -47,9 +55,73 @@ def get_dataset_profile(
     settings: Settings = Depends(get_settings),
 ) -> DatasetProfile:
     dataset = dataset_service.get_dataset(db, dataset_id)
-    df = dataset_service.load_dataframe(dataset, settings)
+    snapshot = dataset_service.get_latest_insight(db, dataset_id)
+    if snapshot is None:
+        # Backfill datasets uploaded before persistent insight snapshots existed.
+        df = dataset_service.load_dataframe(dataset, settings)
+        profile_data = dataset_service.build_profile_data(df)
+        snapshot = dataset_service.save_insight_snapshot(db, dataset_id, profile_data)
     return DatasetProfile(
-        dataset=DatasetSummary.model_validate(dataset), **dataset_service.build_profile_data(df)
+        dataset=DatasetSummary.model_validate(dataset),
+        **snapshot.insights_json,
+        insight_id=snapshot.id,
+        insight_version=snapshot.version,
+        insights_generated_at=snapshot.generated_at,
+    )
+
+
+@router.get("/{dataset_id}/insights", response_model=DatasetInsightSnapshot)
+def get_saved_insights(
+    dataset_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> DatasetInsightSnapshot:
+    """Return the latest saved analysis, creating a first snapshot for legacy datasets."""
+    dataset = dataset_service.get_dataset(db, dataset_id)
+    snapshot = dataset_service.get_latest_insight(db, dataset_id)
+    if snapshot is None:
+        df = dataset_service.load_dataframe(dataset, settings)
+        snapshot = dataset_service.save_insight_snapshot(
+            db, dataset_id, dataset_service.build_profile_data(df)
+        )
+    return DatasetInsightSnapshot(
+        id=snapshot.id, dataset_id=snapshot.dataset_id, version=snapshot.version,
+        schema_version=snapshot.schema_version, generated_at=snapshot.generated_at,
+        profile=snapshot.insights_json,
+    )
+
+
+@router.get("/{dataset_id}/insights/history", response_model=DatasetInsightHistory)
+def get_insight_history(dataset_id: str, db: Session = Depends(get_db)) -> DatasetInsightHistory:
+    dataset_service.get_dataset(db, dataset_id)
+    snapshots = dataset_service.list_insight_snapshots(db, dataset_id)
+    return DatasetInsightHistory(
+        dataset_id=dataset_id,
+        total=len(snapshots),
+        items=[DatasetInsightSnapshot(
+            id=item.id, dataset_id=item.dataset_id, version=item.version,
+            schema_version=item.schema_version, generated_at=item.generated_at,
+            profile=item.insights_json,
+        ) for item in snapshots],
+    )
+
+
+@router.post("/{dataset_id}/insights/regenerate", response_model=DatasetInsightSnapshot, status_code=status.HTTP_201_CREATED)
+def regenerate_insights(
+    dataset_id: str,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> DatasetInsightSnapshot:
+    """Recalculate EDA from the stored CSV and persist it as a new version."""
+    dataset = dataset_service.get_dataset(db, dataset_id)
+    df = dataset_service.load_dataframe(dataset, settings)
+    snapshot = dataset_service.save_insight_snapshot(
+        db, dataset_id, dataset_service.build_profile_data(df)
+    )
+    return DatasetInsightSnapshot(
+        id=snapshot.id, dataset_id=snapshot.dataset_id, version=snapshot.version,
+        schema_version=snapshot.schema_version, generated_at=snapshot.generated_at,
+        profile=snapshot.insights_json,
     )
 
 

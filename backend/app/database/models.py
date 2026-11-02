@@ -79,6 +79,27 @@ class Dataset(Base):
     uploaded_at: Mapped[datetime] = mapped_column(Timestamp, default=utc_now, index=True)
 
     experiments: Mapped[list["Experiment"]] = relationship(back_populates="dataset")
+    insight_snapshots: Mapped[list["DatasetInsight"]] = relationship(
+        back_populates="dataset", cascade="all, delete-orphan", order_by="DatasetInsight.generated_at.desc()"
+    )
+
+
+class DatasetInsight(Base):
+    """Immutable saved snapshot of a dataset profile/EDA run."""
+
+    __tablename__ = "dataset_insights"
+    __table_args__ = (Index("ix_dataset_insights_dataset_generated", "dataset_id", "generated_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    dataset_id: Mapped[str] = mapped_column(
+        ForeignKey("datasets.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    schema_version: Mapped[int] = mapped_column(Integer, default=1)
+    insights_json: Mapped[dict] = mapped_column(JSON)
+    generated_at: Mapped[datetime] = mapped_column(Timestamp, default=utc_now, index=True)
+
+    dataset: Mapped[Dataset] = relationship(back_populates="insight_snapshots")
 
 
 class Experiment(Base):

@@ -8,7 +8,7 @@ For example, the stored filename on disk is never included here.
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import UTCDateTime
 
@@ -47,8 +47,30 @@ class DatasetProfile(BaseModel):
     numeric_statistics: dict[str, dict[str, float | None]]
     categorical_statistics: dict[str, dict[str, Any]]
     warnings: list[str]
+    missing_by_column: dict[str, dict[str, int | float]] = Field(default_factory=dict)
+    correlation_matrix: dict[str, dict[str, float | None]] = Field(default_factory=dict)
+    correlation_columns_analyzed: int = 0
+    recommendations: list[str] = Field(default_factory=list)
+    insight_id: str | None = None
+    insight_version: int | None = None
+    insights_generated_at: UTCDateTime | None = None
 
 
 class DatasetListResponse(BaseModel):
     total: int
     items: list[DatasetSummary]
+
+
+class DatasetInsightSnapshot(BaseModel):
+    id: str
+    dataset_id: str
+    version: int
+    schema_version: int
+    generated_at: UTCDateTime
+    profile: dict[str, Any]
+
+
+class DatasetInsightHistory(BaseModel):
+    dataset_id: str
+    total: int
+    items: list[DatasetInsightSnapshot]

@@ -87,7 +87,7 @@ def db_session(db_engine):
 def _clear_tables(engine) -> None:
     # Delete children before parents to respect the foreign keys.
     with engine.begin() as connection:
-        for table in ("model_results", "experiments", "datasets", "users"):
+        for table in ("model_results", "experiments", "dataset_insights", "datasets", "users"):
             connection.execute(text(f"DELETE FROM {table}"))
 
 

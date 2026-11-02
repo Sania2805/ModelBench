@@ -26,7 +26,7 @@ from app.database.connection import check_database_connection, get_engine
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("modelbench")
 
-REQUIRED_TABLES = {"datasets", "experiments", "model_results", "users"}
+REQUIRED_TABLES = {"datasets", "experiments", "model_results", "users", "dataset_insights"}
 
 
 @asynccontextmanager
