@@ -1,5 +1,6 @@
 # --- Secrets ---
 .env
+ca.pem
 .env.*
 !.env.example
 

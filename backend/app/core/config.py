@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     database_port: int = 3306
     database_name: str
     database_user: str
+    database_ssl_ca: Path = BACKEND_DIR / "ca.pem"
     # An empty password is technically allowed by MySQL, so we only require
     # that the variable is *present*, not that it is non-empty.
     database_password: str
@@ -107,7 +108,10 @@ class Settings(BaseSettings):
             host=self.database_host,
             port=self.database_port,
             database=self.database_name,
-            query={"charset": "utf8mb4"},
+            query={
+                "charset": "utf8mb4",
+                "ssl_ca": str(self.database_ssl_ca),
+            },
         )
 
     @property
